@@ -1,0 +1,3 @@
+httpx>=0.27
+# only for docs/make_slides.py:
+# python-pptx

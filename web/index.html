@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Maple Hollow</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main>
+    <!-- left: the village (drawn by game.js) with the dialogue box on top of it -->
+    <div id="stage">
+      <canvas id="map" width="960" height="608"></canvas>
+      <div id="toast" hidden></div>
+      <div id="talk" hidden>
+        <div id="talk-head">
+          <b id="talk-name"></b> <span id="talk-role"></span>
+          <button id="talk-close" type="button">Leave (Esc)</button>
+        </div>
+        <div id="talk-log"></div>
+        <form id="talk-form">
+          <input id="talk-input" maxlength="300" autocomplete="off" placeholder="Say anything…">
+          <button>Say</button>
+        </form>
+      </div>
+    </div>
+
+    <!-- right: everything the GAME knows about you. None of it is decided by the AI. -->
+    <aside>
+      <h1>Maple Hollow</h1>
+      <p id="no-key" hidden>No AI key found (.env). The characters can only say their ready-made lines.</p>
+      <p id="place"></p>
+      <h2>Gold</h2>
+      <p id="gold"></p>
+      <h2>Bag</h2>
+      <ul id="bag"></ul>
+      <h2>Quests</h2>
+      <ul id="quests"></ul>
+      <div id="mood-box" hidden>
+        <h2 id="mood-title"></h2>
+        <div id="mood"></div>
+      </div>
+      <h2>What happened</h2>
+      <ul id="events"></ul>
+      <p class="keys"><kbd>Arrows</kbd> or <kbd>WASD</kbd> walk · <kbd>E</kbd> talk · <kbd>F</kbd> search · <kbd>Esc</kbd> leave</p>
+      <p><button id="search" type="button">Search here</button> <button id="reset" type="button">New game</button></p>
+    </aside>
+  </main>
+  <script src="/game.js"></script>
+</body>
+</html>

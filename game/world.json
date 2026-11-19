@@ -1,0 +1,41 @@
+{
+  "village": "Maple Hollow",
+  "player_start": {"gold": 40, "place": "village_square", "inventory": []},
+
+  "places": {
+    "village_square": {"name": "Village Square", "danger": "safe", "needs_item": null,
+      "about": "The heart of Maple Hollow, with the old well. Elder Mira sits here; a travelling singer called Miku performs by the fountain."},
+    "market": {"name": "Market Stall", "danger": "safe", "needs_item": null,
+      "about": "Bram's stall of travel goods."},
+    "north_gate": {"name": "North Gate", "danger": "safe", "needs_item": null,
+      "about": "The only way out to the woods and the mine. Captain Roderic keeps watch here."},
+    "whispering_woods": {"name": "Whispering Woods", "danger": "risky", "needs_item": null,
+      "about": "Dark even at noon. Wolves hunt here; they are afraid of fire."},
+    "old_mine": {"name": "Old Mine", "danger": "deadly", "needs_item": "gate_pass",
+      "about": "Closed since the collapse. Its gate is locked and only the guard captain's Gate Pass opens it. The ladder inside is broken."}
+  },
+
+  "items": {
+    "torch": {"name": "Torch", "price": 5, "sold_by": "bram", "about": "Lights dark places and keeps wolves away."},
+    "rope": {"name": "Rope", "price": 8, "sold_by": "bram", "about": "For climbing down where a ladder is broken."},
+    "healing_potion": {"name": "Healing Potion", "price": 15, "sold_by": "bram", "about": "Heals wounds."},
+    "wolf_charm": {"name": "Wolf Charm", "price": 30, "sold_by": "bram", "about": "A carved charm said to calm wolves."},
+    "silver_locket": {"name": "Silver Locket", "price": null, "sold_by": null, "about": "Elder Mira's lost locket."},
+    "gate_pass": {"name": "Gate Pass", "price": null, "sold_by": null, "about": "A stamped pass that opens the Old Mine gate. Only Captain Roderic gives it out."},
+    "miners_ledger": {"name": "Miners' Ledger", "price": null, "sold_by": null, "about": "The record book the miners left behind."}
+  },
+
+  "quests": {
+    "lost_locket": {"name": "The Lost Locket", "giver": "mira", "requires_quest": null, "wants_item": "silver_locket", "reward_gold": 25,
+      "summary": "Mira lost her Silver Locket in the Whispering Woods. Find it and bring it back."},
+    "mine_ledger": {"name": "The Miners' Ledger", "giver": "mira", "requires_quest": "lost_locket", "wants_item": "miners_ledger", "reward_gold": 40,
+      "summary": "Bring back the Miners' Ledger from the Old Mine. The gate needs a Gate Pass from Captain Roderic."}
+  },
+
+  "searches": {
+    "whispering_woods": {"finds": "silver_locket", "needs_item": "torch", "needs_quest": "lost_locket",
+      "fail": "It is too dark to search, and the wolves are close. You need a light."},
+    "old_mine": {"finds": "miners_ledger", "needs_item": "rope", "needs_quest": "mine_ledger",
+      "fail": "The ladder is broken. You need a way to climb down."}
+  }
+}
