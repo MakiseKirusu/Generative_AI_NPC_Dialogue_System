@@ -43,6 +43,5 @@ key, takes about a minute, never touches your saved game, and writes every line 
 - `start.py`: asks which way you want to play.
 - `play.py`: the text version of the game.
 - `run_game.py` and `web/`: the full game. `run_game.py` is a small web server on your own computer; `web/game.js` draws the village and sends what you do to it.
-- `docs/`: the Milestone 1 slides; the speaking script, split between the four of us, as key points (`PRESENTATION_BULLETS.md`) and in full sentences (`PRESENTATION_SCRIPT.md`), both made from `talk.py`; the Milestone 2 demo script (`DEMO_SCRIPT.md`); and three background scripts for questions: how it works, with `game/` and `brain/` (`HOW_IT_WORKS_SCRIPT.md`), the full game screen (`CODE_SCRIPT.md`), and the prompt design (`PROMPT_SCRIPT_THANH.md`). `week2_game_screen.png` and `week2_ending.png` are screenshots of the game for slides.
 - `logs/turns.jsonl`: every line of dialogue with its time, model and problems (made while you play; for the report).
 - `save.json`: the saved game, including what each character remembers (made while you play).

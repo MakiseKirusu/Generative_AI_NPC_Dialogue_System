@@ -178,8 +178,7 @@ teammates who do not code can write and change them; the coder checks the result
 | **Researcher and reporter**: the report and the slides | Section 6 (similar systems), the requirements table | Keep the report up to date as things change | The report, the presentation, the limitations |
 
 The team: Nguyen Minh Triet (10423180), Dao Dinh Thanh (10423102), Tran Quyen Anh (10423189), Vo Thien Nhan (10423086).
-Nguyen Minh Triet writes the code. Dao Dinh Thanh designs and explains the prompts (`docs/PROMPT_SCRIPT_THANH.md`).
-Who presents which slide is in `docs/PRESENTATION_SCRIPT.md`.
+Nguyen Minh Triet writes the code. Dao Dinh Thanh designs and explains the prompts.
 
 ## 8. Experiments for the report (week 3)
 
