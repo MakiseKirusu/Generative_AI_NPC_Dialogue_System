@@ -3,7 +3,8 @@
 // exactly like in the terminal version. Nothing in this file can change the game by itself.
 
 const $ = id => document.getElementById(id);
-const canvas = $('map'), ctx = canvas.getContext('2d');
+const canvas = $('map'), mapCtx = canvas.getContext('2d');
+let ctx = mapCtx;  // what the drawing helpers draw on: the map, or for a moment the dialogue box's portrait
 const W = canvas.width, H = canvas.height;
 
 async function api(path, body) {
@@ -47,19 +48,26 @@ const blocked = (x, y) => x < 10 || x > W - 10 || y < 14 || y > H - 4 ||
 
 // ───────────────────────── what the screen remembers ─────────────────────────
 let world;                 // names of places, items, quests and characters (never changes)
-let S;                     // the game state from the server: {game, moods, history, has_key}
+let S;                     // the game state from the server: {game, next, marks, moods, history, has_key}
 const player = {x: 0, y: 0, moving: false};
 const keys = new Set();
 let talkingTo = null;      // the character whose dialogue box is open
 let busy = false;          // waiting for the server: the player stands still
+let skipType = false;      // a key or a click shows the rest of the line being typed at once
 let refusedUntil = 0;      // after the game refuses a move, do not ask again for a moment
 const happened = [];       // lines for "What happened" in the side panel
+const PLACE_SPOT = {village_square: [680, 540], market: [175, 500], north_gate: [480, 330], whispering_woods: [200, 150], old_mine: [780, 150]};
+const STILL = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const has = item => S.game.inventory.includes(item);
+const sheetOpen = () => !$('intro').hidden || !$('ending').hidden;
+const el = (tag, cls, text) => Object.assign(document.createElement(tag), cls ? {className: cls} : {}, text !== undefined ? {textContent: text} : {});
 
 function setState(data) {
-  S = {game: data.game, moods: data.moods, history: data.history, has_key: data.has_key};
+  const wasDone = S ? S.next.done : null;
+  S = {game: data.game, next: data.next, marks: data.marks, moods: data.moods, history: data.history, has_key: data.has_key};
   renderSide();
+  if (S.next.done && wasDone === false) showEnding();  // only the moment the last task is done, not on every load
 }
 
 function note(message) {
@@ -74,7 +82,7 @@ function note(message) {
 // ───────────────────────── walking and searching ─────────────────────────
 function update(dt) {
   player.moving = false;
-  if (talkingTo || busy) return;
+  if (talkingTo || busy || sheetOpen()) return;
   const held = (...names) => names.some(k => keys.has(k));
   const dx = held('ArrowRight', 'd') - held('ArrowLeft', 'a'), dy = held('ArrowDown', 's') - held('ArrowUp', 'w');
   if (!dx && !dy) return;
@@ -121,10 +129,45 @@ function line(kind, text) {
 
 function sayLine(name, say) {  // names the character put in [brackets] are shown in blue
   const p = line('npc', name + ': ');
-  say.split(/\[([^\]]+)\]/).forEach((part, i) => {
-    if (i % 2) { const b = document.createElement('b'); b.className = 'thing'; b.textContent = part; p.append(b); }
-    else p.append(part);
+  say.split(/\[([^\]]+)\]/).forEach((part, i) => p.append(i % 2 ? el('b', 'thing', part) : part));
+}
+
+function typeLine(name, say) {  // the same, letter by letter (quick; a key or a click shows it all)
+  const p = line('npc', name + ': ');
+  const parts = say.split(/\[([^\]]+)\]/).map((text, i) => {
+    const node = i % 2 ? el('b', 'thing', '') : document.createTextNode('');
+    p.append(node);
+    return [node, text];
   });
+  const total = parts.reduce((n, [, text]) => n + text.length, 0), ms = STILL ? 0 : Math.min(1100, total * 16), start = performance.now();
+  skipType = false;
+  return new Promise(done => {
+    const step = now => {
+      const end = skipType || now - start >= ms;
+      let n = end ? total : Math.ceil(total * (now - start) / ms);
+      for (const [node, text] of parts) { const k = Math.min(text.length, n); node.textContent = text.slice(0, k); n -= k; }
+      $('talk-log').scrollTop = 1e6;
+      if (end) done(); else requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  });
+}
+
+function portrait(id) {  // the character's head, drawn by the same code as on the map, twice as big
+  const face = $('talk-face'), c = face.getContext('2d');
+  c.clearRect(0, 0, face.width, face.height);
+  c.save(); c.translate(28, 100); c.scale(1.8, 1.8);
+  ctx = c; person(0, 0, LOOKS[id]); ctx = mapCtx;
+  c.restore();
+}
+
+function ideas(id) {  // a few things to say, from the character sheet; typing anything else works just as well
+  $('talk-ideas').replaceChildren(...world.npcs[id].try.map(text => {
+    const b = el('button', '', text);
+    b.type = 'button';
+    b.onclick = () => { if (busy) return; $('talk-input').value = text; $('talk-form').requestSubmit(); };
+    return b;
+  }));
 }
 
 function openTalk(id) {
@@ -133,7 +176,9 @@ function openTalk(id) {
   $('talk-name').textContent = world.npcs[id].name;
   $('talk-role').textContent = world.npcs[id].role;
   $('talk-log').replaceChildren();
-  for (const h of S.history[id]) { line('you', 'You: ' + h.player); line('npc', world.npcs[id].name + ': ' + h.npc); }
+  for (const h of S.history[id]) { line('you', 'You: ' + h.player); sayLine(world.npcs[id].name, h.npc); }
+  ideas(id);
+  portrait(id);
   $('talk').hidden = false;
   $('talk-input').focus();
   renderSide();
@@ -148,28 +193,30 @@ function closeTalk() {
 
 $('talk-form').onsubmit = async event => {
   event.preventDefault();
-  const input = $('talk-input'), text = input.value.trim(), name = world.npcs[talkingTo].name;
+  const input = $('talk-input'), text = input.value.trim(), id = talkingTo, name = world.npcs[id].name;
   if (!text || busy) return;
   input.value = '';
   line('you', 'You: ' + text);
-  const waiting = line('meta', name + ' is thinking…');
+  const waiting = line('meta thinking', name + ' is thinking');
   busy = input.disabled = true;
   try {
-    const result = await api('/api/talk', {npc: talkingTo, text});
+    const result = await api('/api/talk', {npc: id, text});
     const reply = result.reply;
     waiting.remove();
-    sayLine(name, reply.say);
+    await typeLine(name, reply.say);
     for (const e of reply.events) { line('event', '★ ' + e); note(e); }  // the stars are things the GAME did
     line('meta', reply.source === 'model' ? `AI model, ${reply.latency_ms} ms`
       : reply.source === 'fallback' ? `ready-made line: ${reply.problems.at(-1) || 'no answer'}`
       : 'safety filter: this was not sent to the AI');
     setState(result);
   } catch (error) {
+    waiting.className = 'meta';
     waiting.textContent = 'The game is not answering. Is the terminal window with run_game.py still open?';
   }
   busy = input.disabled = false;
   input.focus();
 };
+$('talk-log').onclick = () => { skipType = true; };
 
 // ───────────────────────── the side panel ─────────────────────────
 function fill(id, lines, empty) {
@@ -184,26 +231,37 @@ function renderSide() {
   if (!world || !S) return;
   const g = S.game, place = world.places[g.place];
   $('no-key').hidden = S.has_key;
-  $('place').textContent = `You are at the ${place.name}` + (g.known_dangers.includes(g.place) ? ` (${place.danger}).` : '.');
+  $('place').replaceChildren('You are at the ', el('b', '', place.name), g.known_dangers.includes(g.place) ? ` (${place.danger})` : '', '.');
+  $('goal-text').textContent = S.next.text;
+  $('goal').classList.toggle('done', S.next.done);
   $('gold').textContent = g.gold;
-  fill('bag', g.inventory.map(i => world.items[i]), 'empty');
-  fill('quests', Object.entries(g.quests).map(([id, status]) => {
-    const about = document.createElement('small');
-    about.textContent = status === 'active' ? world.quests[id].summary : '';
-    return [`${world.quests[id].name}: ${status.replace('_', ' ')}`, about];
-  }), 'none');
+  fill('bag', g.inventory.map(i => [el('b', '', world.items[i].name), el('small', '', world.items[i].about)]), 'empty');
+  fill('quests', Object.entries(g.quests).map(([id, status]) => [
+    el('span', 'chip ' + status, status.replace('_', ' ')), el('b', '', world.quests[id].name),
+    el('small', '', status === 'active' ? world.quests[id].summary : status === 'done' ? `Reward paid: ${world.quests[id].reward} gold.` : '')]), 'none');
   fill('events', happened.slice(-5), 'Nothing yet.');
   $('mood-box').hidden = !talkingTo;
   if (talkingTo) {
     $('mood-title').textContent = world.npcs[talkingTo].name + "'s mood";
     $('mood').replaceChildren(...Object.entries(S.moods[talkingTo]).map(([name, value]) => {
-      const row = document.createElement('div');
-      row.className = 'bar';
-      row.innerHTML = `<span></span><i><b style="width:${value * 10}%"></b></i><span>${Number(value)}</span>`;
-      row.firstChild.textContent = name;
+      const row = el('div', 'bar'), bar = el('i'), fillBar = el('b');
+      fillBar.style.width = `${Number(value) * 10}%`;
+      bar.append(fillBar);
+      row.append(el('span', '', name), bar, el('span', '', String(Number(value))));
       return row;
     }));
   }
+}
+
+function showEnding() {
+  $('ending-gold').textContent = `You finish with ${S.game.gold} gold.`;
+  $('ending').hidden = false;
+  $('ending-ok').focus();
+}
+
+function closeSheet() {
+  $('intro').hidden = $('ending').hidden = true;
+  canvas.focus?.();
 }
 
 // ───────────────────────── keys and buttons ─────────────────────────
@@ -212,7 +270,8 @@ const keyName = e => e.key.length === 1 ? e.key.toLowerCase() : e.key;
 addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const key = keyName(e);
-  if (talkingTo) { if (key === 'Escape') closeTalk(); return; }
+  if (sheetOpen()) { if (key === 'Enter' || key === ' ' || key === 'Escape' || key === 'e') { e.preventDefault(); closeSheet(); } return; }
+  if (talkingTo) { if (busy) skipType = true; else if (key === 'Escape') closeTalk(); return; }
   if (key.startsWith('Arrow') || key === ' ') e.preventDefault();  // do not scroll the page
   if (key === 'e' && nearby()) { e.preventDefault(); openTalk(nearby()); }
   else if (key === 'f') search();
@@ -221,6 +280,8 @@ addEventListener('keydown', e => {
 addEventListener('keyup', e => keys.delete(keyName(e)));
 addEventListener('blur', () => keys.clear());
 $('talk-close').onclick = closeTalk;
+$('intro-go').onclick = closeSheet;
+$('ending-ok').onclick = closeSheet;
 $('search').onclick = e => { e.target.blur(); search(); };
 $('reset').onclick = async e => {
   e.target.blur();
@@ -229,6 +290,7 @@ $('reset').onclick = async e => {
   happened.length = 0;
   setState(await api('/api/reset', {}));
   [player.x, player.y] = SPAWN[S.game.place];
+  $('intro').hidden = false;
 };
 
 // ───────────────────────── drawing ─────────────────────────
@@ -309,9 +371,15 @@ function draw(t) {
   rect('#8d8f98', 0, WALL_Y, 448, 26); rect('#8d8f98', 512, WALL_Y, 448, 26);
   for (let x = 0; x < W; x += 24) if (x < 432 || x >= 528) rect('#74767f', x + 4, WALL_Y, 12, 7);
   rect('#6f717a', 430, WALL_Y - 22, 20, 52); rect('#6f717a', 510, WALL_Y - 22, 20, 52);
-  // names of the places, written on the ground
-  for (const [id, x, y] of [['whispering_woods', 200, 240], ['old_mine', 780, 240], ['north_gate', 480, 302], ['market', 175, 592], ['village_square', 680, 592]])
-    label(world.places[id].name, x, y, 14, id === g.place ? '#ffe9a8' : 'rgba(255,255,255,.8)');
+  // the next step (worked out by the game, not the AI): a ring on the ground at a place; for a character, an arrow over
+  // their head further down (Bram stands behind his counter, which would hide a ring)
+  const pulse = STILL ? 0.5 : (Math.sin(t * 4) + 1) / 2;
+  const spot = S.next.done || talkingTo || S.next.npc ? null : PLACE_SPOT[S.next.place];
+  if (spot) {
+    ctx.strokeStyle = `rgba(255, 216, 102, ${0.55 + 0.4 * pulse})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(spot[0], spot[1], 20 + 6 * pulse, 8 + 2 * pulse, 0, 0, 7); ctx.stroke();
+  }
 
   // everything that stands on the ground, drawn from the back to the front so you can walk behind things
   const things = [
@@ -344,11 +412,29 @@ function draw(t) {
   ctx.fill('evenodd');
   ctx.restore();
 
-  // name tags, and the hint to talk
+  // names of the places (over the woods' darkness, so they stay readable); a danger shows once someone has warned you
+  for (const [id, x, y] of [['whispering_woods', 200, 240], ['old_mine', 780, 240], ['north_gate', 480, 302], ['market', 175, 592], ['village_square', 680, 592]]) {
+    const known = g.known_dangers.includes(id), danger = world.places[id].danger;
+    label(world.places[id].name + (known ? ` · ${danger}` : ''), x, y, 14,
+      known && danger !== 'safe' ? (danger === 'deadly' ? '#ff9a8a' : '#ffd27a') : id === g.place ? '#ffe9a8' : 'rgba(255,255,255,.8)');
+  }
+
+  // name tags, the signs over heads ("!" a task for you, "?" you carry what their task asks for), and the hint to talk
   const close = talkingTo ? null : nearby();
   for (const [id, [x, y]] of Object.entries(STAND)) {
     label(world.npcs[id].name, x, y - 60);
+    const mark = S.marks[id];
+    if (mark && id !== close) {
+      const bob = STILL ? 0 : Math.sin(t * 3 + x) * 2;
+      oval('rgba(42, 33, 24, .9)', x, y - 84 + bob, 11);
+      label(mark, x, y - 78 + bob, 17, mark === '!' ? '#ffd866' : '#8fd0ee');
+    }
     if (id === close) { pill('rgba(42, 33, 24, .9)', x - 34, y - 96, 68, 22, 6); label('E  talk', x, y - 80, 13, '#ffe9a8'); }
+    if (id === S.next.npc && !S.next.done && !talkingTo && id !== close) {  // the next step is to talk to them
+      const top = y - (S.marks[id] ? 104 : 80) - 6 * pulse;
+      ctx.fillStyle = '#ffd866'; ctx.strokeStyle = 'rgba(42, 33, 24, .9)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(x - 9, top - 12); ctx.lineTo(x + 9, top - 12); ctx.lineTo(x, top); ctx.closePath(); ctx.stroke(); ctx.fill();
+    }
   }
 }
 
@@ -365,5 +451,7 @@ function frame(now) {
   world = await api('/api/world');
   setState(await api('/api/state'));
   [player.x, player.y] = SPAWN[S.game.place];
+  $('intro-go').textContent = Object.values(S.history).some(h => h.length) ? 'Continue' : 'Play';
+  $('intro-go').focus();
   requestAnimationFrame(frame);
 })();

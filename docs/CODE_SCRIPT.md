@@ -43,7 +43,7 @@ start.py ── choice 1 ──> play.py ─────────────
 
 ---
 
-## 2. `run_game.py` (149 lines)
+## 2. `run_game.py` (154 lines)
 
 **One sentence:** it is a small web server on my own computer that connects the game screen in the browser to the
 Python brain.
@@ -55,8 +55,8 @@ Python brain.
 > Python already includes, so there is nothing extra to install.
 >
 > The browser can ask it for six things. Two only read: `world` gives the names of the places, items and characters,
-> and `state` gives the game right now, like gold, bag and quests. Four do something: `talk`, `go`, `search` and
-> `reset`.
+> and `state` gives the game right now, like gold, bag, quests, the next step and the signs over heads. Four do
+> something: `talk`, `go`, `search` and `reset`.
 >
 > The important part is the function `act`. When the browser sends 'talk to Bram: hello', `act` calls `Brain.talk`,
 > the same function the terminal version calls. When the player walks to another place it calls `Game.go`, and the
@@ -83,12 +83,14 @@ Python brain.
   the browser from sending commands to the game."
 - *What is the lock for?* "All requests share one game. The lock makes them wait for each other, so two actions
   cannot change the game at the same moment."
-- *What happens if the AI is slow?* "Nothing special here. `Brain.talk` already gives up after 12 seconds and
+- *What happens if the AI is slow?* "Nothing special here. `Brain.talk` already gives up after 9 seconds and
   returns a ready-made line; the server just passes it on."
+- *Where does the 'Next' box come from?* "From `state()`: it calls `Game.next_step`, which works out the goal from
+  the game's facts. The screen only prints it, and the AI is not involved."
 
 ---
 
-## 3. `web/game.js` (369 lines)
+## 3. `web/game.js` (457 lines)
 
 **One sentence:** it draws the village and passes on what the player does; it cannot change gold, items or quests by
 itself.
@@ -107,25 +109,29 @@ seven steps below (the short "keys and buttons" section belongs to steps four an
 > standing in. `SOLID` are the things you cannot walk through, like the wall and Bram's counter. `STAND` is where
 > each character stands.
 >
-> **Three: what the screen remembers.** `S` is the game state, and it always comes from the server. The screen only
-> remembers small things of its own, like where the player is standing and which keys are held down.
+> **Three: what the screen remembers.** `S` is the game state, and it always comes from the server: gold, bag,
+> quests, the next step and the signs. The screen only remembers small things of its own, like where the player is
+> standing and which keys are held down.
 >
 > **Four: walking.** `update` runs many times a second. It moves the player a little in the direction of the keys,
 > unless something solid is in the way. When the next step would cross into another place, it does not just walk
 > in. It calls `enter`, which asks the game first. That is how the mine gate works: the game answers 'the way is
 > locked, you need the Gate Pass', and the player stays where they are.
 >
-> **Five: talking.** Pressing E next to a character opens the dialogue box. When I send a line, it goes to the
-> server, and the answer is shown with three kinds of lines: what the character said, a star line for anything the
-> game did, like a purchase, and a small grey line that says whether the AI answered and how fast, or whether it was
-> a ready-made line and why.
+> **Five: talking.** Pressing E next to a character opens the dialogue box, with their face drawn by the same code
+> as on the map, and three ideas to say as buttons; I can still type anything. When I send a line, '…is thinking'
+> shows while the AI works. The answer appears letter by letter, then a star line for anything the game did, like a
+> purchase, and a small grey line that says whether the AI answered and how fast, or whether it was a ready-made line
+> and why.
 >
-> **Six: the side panel.** `renderSide` writes the gold, the bag, the quests and the mood bars. It copies them from
-> the state; it calculates nothing.
+> **Six: the side panel.** `renderSide` writes the next step, the gold, the bag with what each item is for, the
+> quests and the mood bars. It copies them from the state; it calculates nothing.
 >
 > **Seven: drawing.** `draw` paints the picture from simple shapes: rectangles, circles and lines. There are no
 > image files. Everything that stands on the ground is sorted from back to front, so the player can walk behind a
-> tree or a house."
+> tree or a house. On top come the helpers from the game's facts: a gold ring or arrow for the next step, '!' and '?'
+> over a character, and a place's danger written next to its name once someone has warned me. There is also a story
+> card when the game opens, and a 'thank you' card the moment the game says every task is done."
 
 **Point at:**
 
@@ -135,6 +141,8 @@ seven steps below (the short "keys and buttons" section belongs to steps four an
 - `sayLine`: names the character wrote in [brackets] are shown in blue. They are the names that were checked against
   the game's facts.
 - The woods at the end of `draw`: a dark layer, with a hole of light around the player when the bag has a Torch.
+- The goal marker in `draw` (`S.next`): a ring for a place, an arrow over a character.
+- `typeLine` and `portrait`: the dialogue box's typing effect and the face drawn from `person`.
 
 **If the teacher asks:**
 
@@ -150,7 +158,12 @@ seven steps below (the short "keys and buttons" section belongs to steps four an
 - *Why is there a short pause after the locked gate refuses?* "So that holding the key down does not ask the game
   the same question sixty times a second. It waits one and a half seconds."
 - *Why no pictures or a game engine?* "To keep it small enough to explain. The project is about the dialogue
-  system; the screen only has to show it. Nicer graphics are polish for week 2."
+  system; the screen only has to show it. In week 2 we polished it with what the game knows: the next-step marker,
+  the signs over heads, the danger labels, the portrait and the story and ending cards."
+- *Is the 'Next' box an AI hint?* "No. It comes from `Game.next_step`, plain code that reads the quests, the bag and
+  `world.json`. The AI never decides what the goal is."
+- *Aren't the idea buttons a dialogue tree again?* "They are only examples for people who do not know what to say.
+  Pressing one just types that line; the AI answers it like anything else, and any other line works too."
 - *Did you write the drawing code yourself?* Answer this one honestly, in your own words: say what you wrote, what
   you had help with, and that you can explain each part.
 

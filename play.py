@@ -19,12 +19,15 @@ from game.state import WORLD
 HERE = Path(__file__).parent
 
 
+PEOPLE = {k: {"name": n["name"], "place": n["place"]} for k, n in NPCS.items()}
+
+
 def look(game) -> str:
     place = WORLD["places"][game.place]
     here = [n["name"] for n in NPCS.values() if n["place"] == game.place]
     others = ", ".join(f"{k} ({p['name']})" for k, p in WORLD["places"].items() if k != game.place)
     return (f"\n== {place['name']} ==\nHere: {', '.join(here) or 'nobody'}.  Gold: {game.gold}.\n"
-            f"You can go to: {others}")
+            f"You can go to: {others}\nNext: {game.next_step(PEOPLE)['text']}")
 
 
 def name_words(npc_id: str) -> set[str]:
@@ -84,6 +87,7 @@ def main() -> None:
         elif word == "quests":
             for q, status in game.quests.items():
                 print(f"  {WORLD['quests'][q]['name']}: {status.replace('_', ' ')}")
+            print(f"  Next: {game.next_step(PEOPLE)['text']}")
         elif word == "go":
             place = next((k for k, p in WORLD["places"].items() if rest in (k, p["name"].lower()) or rest.replace(" ", "_") == k), rest)
             print(game.go(place)[1])

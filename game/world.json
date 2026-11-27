@@ -21,7 +21,7 @@
     "healing_potion": {"name": "Healing Potion", "price": 15, "sold_by": "bram", "about": "Heals wounds."},
     "wolf_charm": {"name": "Wolf Charm", "price": 30, "sold_by": "bram", "about": "A carved charm said to calm wolves."},
     "silver_locket": {"name": "Silver Locket", "price": null, "sold_by": null, "about": "Elder Mira's lost locket."},
-    "gate_pass": {"name": "Gate Pass", "price": null, "sold_by": null, "about": "A stamped pass that opens the Old Mine gate. Only Captain Roderic gives it out."},
+    "gate_pass": {"name": "Gate Pass", "price": null, "sold_by": null, "given_by": "roderic", "about": "A stamped pass that opens the Old Mine gate. Only Captain Roderic gives it out."},
     "miners_ledger": {"name": "Miners' Ledger", "price": null, "sold_by": null, "about": "The record book the miners left behind."}
   },
 

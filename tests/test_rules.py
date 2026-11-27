@@ -78,9 +78,11 @@ def test_quest_cannot_be_completed_by_lying():
 
 
 def test_whole_quest_line():
-    b = Brain(FakeLLM(say("Find my [Silver Locket], child.", "give_quest", "lost_locket"), say("A [Torch]!", "sell", "torch"),
+    b = Brain(FakeLLM(say("I lost my [Silver Locket] in the woods, child. Will you find it?"),
+                      say("Bless you. Find my [Silver Locket], child.", "give_quest", "lost_locket"), say("A [Torch]!", "sell", "torch"),
                       say("Bless you, child.", "complete_quest", "lost_locket")))
-    assert b.talk("mira", "i will help")["events"] == ["New quest: The Lost Locket."]
+    b.talk("mira", "do you need help?")
+    assert b.talk("mira", "yes, i will help")["events"] == ["New quest: The Lost Locket."]
     assert b.game.go("whispering_woods")[0] and not b.game.search()[0]  # too dark without a torch
     b.game.go("market")
     b.talk("bram", "torch please")
@@ -142,13 +144,48 @@ def test_history_is_limited_and_moods_react():
 def test_memory_survives_closing_the_game():
     with tempfile.TemporaryDirectory() as d:
         save = Path(d) / "save.json"
-        b = Brain(FakeLLM(say("Find my [Silver Locket].", "give_quest", "lost_locket")), save_path=save)
+        b = Brain(FakeLLM(say("Find my [Silver Locket]. Will you?"), say("Thank you, child.", "give_quest", "lost_locket")), save_path=save)
+        b.talk("mira", "any work for me?")
         b.talk("mira", "i will help you")
         llm = FakeLLM(say("Welcome back, child."))
         b2 = Brain(llm, save_path=save)  # "the next day"
         b2.talk("mira", "hello again")
         assert b2.game.quests["lost_locket"] == "active" and "You asked the player to do the task 'The Lost Locket'" in llm.prompts[0]
         assert "i will help you" in llm.prompts[0]
+
+
+def test_a_task_starts_only_after_the_player_says_yes():
+    # she describes the task AND hands it out in one line: her words stay, the task does not start
+    b = Brain(FakeLLM(say("Will you find my [Silver Locket] in the [Whispering Woods], child?", "give_quest", "lost_locket"),
+                      say("Thank you, child.", "give_quest", "lost_locket")))
+    out = b.talk("mira", "anything i can do?")
+    assert b.game.quests["lost_locket"] == "not_started" and out["events"] == [] and "Silver Locket" in out["text"], out
+    assert "lost_locket" in b.game.offered and out["source"] == "model", out
+    assert b.talk("mira", "yes")["events"] == ["New quest: The Lost Locket."]
+
+
+def test_amounts_written_in_words_are_checked():
+    b = Brain(FakeLLM(say("A [Torch] is only two gold today!"), say("A [Torch] is five gold, friend.")))
+    b.game.place = "market"
+    out = b.talk("bram", "how much is a torch")
+    assert "five gold" in out["text"] and "'2 gold' is not a real price" in out["problems"][0], out
+    # true totals pass, and so does the player's own number said back, but only when nothing is sold
+    b = Brain(FakeLLM(say("A [Torch] and a [Rope]: thirteen gold for both!"), say("Twelve gold for my [Wolf Charm]? Never, friend!")))
+    b.game.place = "market"
+    assert b.talk("bram", "torch and rope, how much?")["problems"] == []
+    assert b.talk("bram", "the wolf charm for 12 gold?")["problems"] == []
+    b = Brain(FakeLLM(say("Done, twelve gold it is!", "sell", "wolf_charm"), say("No, friend: thirty gold.")))
+    b.game.place = "market"
+    out = b.talk("bram", "the wolf charm for 12 gold?")
+    assert b.game.inventory == [] and "'12 gold' is not a real price" in out["problems"][0], out
+
+
+def test_a_danger_is_marked_once():
+    b = Brain(FakeLLM(*[say("The [Old Mine] is deadly.", "warn", "old_mine")] * 3))
+    b.game.place = "north_gate"
+    assert b.talk("roderic", "is the mine dangerous?")["events"] == ["Marked on your map: Old Mine (deadly)."]
+    assert b.talk("roderic", "is the mine dangerous?")["events"] == []
+    assert sum("warned the player" in m["text"] for m in b.memories["roderic"]) == 1
 
 
 if __name__ == "__main__":

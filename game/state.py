@@ -20,6 +20,10 @@ ACTIONS = {
     "warn": {"who": "roderic", "target": "places"},         # Roderic marks a place's danger on the player's map
 }
 
+# The reason `check` gives when Mira tries to hand out a task she has not offered yet. The brain treats it as "she is
+# offering it now" (the line is kept, nothing happens) instead of as a mistake to ask again about.
+NOT_OFFERED = "you have not offered this task yet: describe it and ask the player if they will help (action none)"
+
 
 class Game:
     def __init__(self, saved: dict | None = None):
@@ -30,10 +34,16 @@ class Game:
         self.inventory: list[str] = list(saved.get("inventory", start["inventory"]))
         self.quests: dict[str, str] = {q: "not_started" for q in WORLD["quests"]} | saved.get("quests", {})
         self.known_dangers: list[str] = list(saved.get("known_dangers", []))
+        self.offered: list[str] = list(saved.get("offered", []))  # tasks Mira has described and asked about
 
     def to_dict(self) -> dict:
         return {"gold": self.gold, "place": self.place, "inventory": self.inventory, "quests": self.quests,
-                "known_dangers": self.known_dangers}
+                "known_dangers": self.known_dangers, "offered": self.offered}
+
+    def offer(self, quest: str) -> None:
+        """Mira has told the player about this task and asked; now the player's "yes" can start it."""
+        if quest in WORLD["quests"] and quest not in self.offered:
+            self.offered.append(quest)
 
     # ---------- what the player does by themselves ----------
     def go(self, place: str) -> tuple[bool, str]:
@@ -53,6 +63,53 @@ class Game:
             return False, spot["fail"]
         self.inventory.append(spot["finds"])
         return True, f"You found: {WORLD['items'][spot['finds']]['name']}!"
+
+    # ---------- what the screens show (worked out from the facts; no AI) ----------
+    def next_step(self, people: dict[str, dict]) -> dict:
+        """The quest log's goal and the map's marker: {"text", "npc", "place", "done"}. `people`: the characters'
+        {"name", "place"} (they live in brain/npcs.py; this file knows no characters)."""
+        items, places = WORLD["items"], WORLD["places"]
+
+        def step(text: str, npc: str | None = None, place: str | None = None, done: bool = False) -> dict:
+            return {"text": text, "npc": npc, "place": place or (people[npc]["place"] if npc else None), "done": done}
+
+        def at(npc: str) -> str:
+            return f"{people[npc]['name']} at the {places[people[npc]['place']]['name']}"
+
+        for q, quest in WORLD["quests"].items():
+            status, giver = self.quests[q], quest["giver"]
+            if status == "done" or (quest["requires_quest"] and self.quests[quest["requires_quest"]] != "done"):
+                continue
+            if status == "not_started":
+                if q in self.offered:
+                    return step(f"Tell {people[giver]['name']} you will help with “{quest['name']}”.", giver)
+                return step(f"Ask {at(giver)} if the village needs help.", giver)
+            wanted = quest["wants_item"]
+            if wanted in self.inventory:
+                return step(f"Bring the {items[wanted]['name']} to {at(giver)}.", giver)
+            spot = next((p for p, s in WORLD["searches"].items() if s["finds"] == wanted), None)
+            if spot is None:
+                return step(quest["summary"], giver)
+            for need, why in ((places[spot]["needs_item"], f"it opens the {places[spot]['name']}"),
+                              (WORLD["searches"][spot]["needs_item"], f"you need it in the {places[spot]['name']}")):
+                if need and need not in self.inventory:
+                    item = items[need]
+                    who = item.get("sold_by") or item.get("given_by")
+                    verb = f"Buy a {item['name']} ({item['price']} gold)" if item.get("sold_by") else f"Get the {item['name']}"
+                    return step(f"{verb} from {at(who)}: {why}.", who)
+            return step(f"Search the {places[spot]['name']} for the {items[wanted]['name']} (stand there and press F).", place=spot)
+        return step(f"Every task is done. {WORLD['village']} thanks you!", done=True)
+
+    def marks(self) -> dict[str, str]:
+        """A sign over a character's head: "!" they have a task for you, "?" you carry what their task asks for."""
+        marks = {}
+        for q, quest in WORLD["quests"].items():
+            status = self.quests[q]
+            if status == "not_started" and (not quest["requires_quest"] or self.quests[quest["requires_quest"]] == "done"):
+                marks.setdefault(quest["giver"], "!")
+            if status == "active" and quest["wants_item"] in self.inventory:
+                marks[quest["giver"]] = "?"
+        return marks
 
     # ---------- what a character asks for ----------
     def check(self, npc: str, action: str, target: str | None) -> tuple[bool, str]:
@@ -78,6 +135,8 @@ class Game:
                 return False, f"the quest '{quest['name']}' was already given"
             if quest["requires_quest"] and self.quests[quest["requires_quest"]] != "done":
                 return False, f"'{WORLD['quests'][quest['requires_quest']]['name']}' must be finished first"
+            if target not in self.offered:  # the player says yes to a task they have heard about, never before
+                return False, NOT_OFFERED
         if action == "complete_quest":
             quest = WORLD["quests"][target]
             if self.quests[target] != "active":
@@ -114,8 +173,9 @@ class Game:
             self.inventory.append("gate_pass")
             return ["Received: Gate Pass."]
         if action == "warn":
-            if target not in self.known_dangers:
-                self.known_dangers.append(target)
+            if target in self.known_dangers:  # already on the map: nothing new happens
+                return []
+            self.known_dangers.append(target)
             place = WORLD["places"][target]
             return [f"Marked on your map: {place['name']} ({place['danger']})."]
         return []

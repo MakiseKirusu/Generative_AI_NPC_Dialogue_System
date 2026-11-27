@@ -21,12 +21,20 @@ Without a key the game still runs: the characters answer with their ready-made f
 
 Arrow keys or WASD walk · `E` talks to the character next to you · `F` searches where you stand · `Esc` leaves a conversation.
 
-The panel on the right shows what the game knows (gold, bag, quests) and the mood of the character you are talking to.
-Under every answer you see where it came from: the AI model and how long it took, or a ready-made line and why.
+The panel on the right shows what the game knows: the **Next** step, gold, bag, quests, and the mood of the character
+you are talking to. On the map, a gold ring or arrow marks the next step, `!` over a character means they have a task
+for you and `?` that you carry what their task asks for; a place's danger shows next to its name once someone warned
+you. All of that comes from the game's own facts, not from the AI. Under every answer you see where it came from: the
+AI model and how long it took, or a ready-made line and why.
 
 ## Check the rules
 
-`python tests/test_rules.py` runs 14 checks with a fake model that lies and makes things up; the game must never act on it. No key needed.
+`python tests/test_rules.py` runs 17 checks with a fake model that lies and makes things up; the game must never act on it. No key needed.
+
+`python tests/scenarios.py` plays five whole scenarios with the **real** model (the full story, 12 trick lines, money,
+the same question five times, asking the wrong person) and checks what the game says is true at the end. It needs a
+key, takes about a minute, never touches your saved game, and writes every line with its timing to
+`logs/scenarios.jsonl`. `python tests/scenarios.py --list` shows them; `python tests/scenarios.py tricks` runs one.
 
 ## Folders
 
@@ -35,6 +43,6 @@ Under every answer you see where it came from: the AI model and how long it took
 - `start.py`: asks which way you want to play.
 - `play.py`: the text version of the game.
 - `run_game.py` and `web/`: the full game. `run_game.py` is a small web server on your own computer; `web/game.js` draws the village and sends what you do to it.
-- `docs/`: the Milestone 1 slides and the demo script.
+- `docs/`: the Milestone 1 slides; the speaking script, split between the four of us, as key points (`PRESENTATION_BULLETS.md`) and in full sentences (`PRESENTATION_SCRIPT.md`), both made from `talk.py`; the Milestone 2 demo script (`DEMO_SCRIPT.md`); and three background scripts for questions: how it works, with `game/` and `brain/` (`HOW_IT_WORKS_SCRIPT.md`), the full game screen (`CODE_SCRIPT.md`), and the prompt design (`PROMPT_SCRIPT_THANH.md`). `week2_game_screen.png` and `week2_ending.png` are screenshots of the game for slides.
 - `logs/turns.jsonl`: every line of dialogue with its time, model and problems (made while you play; for the report).
 - `save.json`: the saved game, including what each character remembers (made while you play).

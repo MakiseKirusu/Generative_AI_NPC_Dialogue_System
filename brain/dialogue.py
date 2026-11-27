@@ -17,7 +17,7 @@ import re
 import time
 from pathlib import Path
 
-from game.state import ACTIONS, WORLD, Game
+from game.state import ACTIONS, NOT_OFFERED, WORLD, Game
 
 from .emotions import Emotions
 from .llm import LLMError
@@ -61,7 +61,43 @@ def _name(kind: str, key: str) -> str:
 
 PEOPLE = {n["name"] for n in NPCS.values()} | {"Roderic", "Mira"}
 KNOWN_NAMES = {s.lower() for s in PEOPLE | {WORLD["village"]} | {v["name"] for kind in ("items", "places", "quests") for v in WORLD[kind].values()}}
-KNOWN_GOLD = {v["price"] for v in WORLD["items"].values() if v["price"]} | {q["reward_gold"] for q in WORLD["quests"].values()}
+PRICES = [v["price"] for v in WORLD["items"].values() if v["price"]]
+KNOWN_GOLD = set(PRICES) | {q["reward_gold"] for q in WORLD["quests"].values()}
+# true totals too: "13 gold for both", "two Torches for 10 gold", both rewards together
+KNOWN_GOLD |= {a + b for a in KNOWN_GOLD for b in KNOWN_GOLD} | {a + b + c for a in PRICES for b in PRICES for c in PRICES}
+
+_UNITS = {w: i for i, w in enumerate("zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen "
+                                     "fifteen sixteen seventeen eighteen nineteen".split())}
+_TENS = {w: 10 * i for i, w in enumerate("_ _ twenty thirty forty fifty sixty seventy eighty ninety".split(), 0) if w != "_"}
+
+
+def amounts(text: str) -> list[int]:
+    """Every amount of gold in a line, in digits or in words: "5 gold", "twenty-five gold", "one thousand coins"."""
+    words = re.findall(r"[a-z]+|\d+", text.lower())
+    found = []
+    for i, w in enumerate(words):
+        if w not in ("gold", "coin", "coins"):
+            continue
+        j = i
+        while j > 0 and (words[j - 1].isdigit() or words[j - 1] in _UNITS or words[j - 1] in _TENS
+                         or words[j - 1] in ("hundred", "thousand", "and") or (words[j - 1] == "a" and j < i and words[j] in ("hundred", "thousand"))):
+            j -= 1
+        total = current = 0
+        number = False
+        for n in words[j:i]:
+            if n.isdigit():
+                current, number = current + int(n), True
+            elif n in _UNITS or n in _TENS:
+                current, number = current + _UNITS.get(n, _TENS.get(n, 0)), True
+            elif n == "a":
+                current = 1
+            elif n == "hundred":
+                current, number = max(current, 1) * 100, True
+            elif n == "thousand":
+                total, current, number = total + max(current, 1) * 1000, 0, True
+        if number:
+            found.append(total + current)
+    return found
 
 
 class Brain:
@@ -149,7 +185,7 @@ class Brain:
         return system, "\n\n".join(parts)
 
     # ---------- checking what came back ----------
-    def problem_with(self, npc_id: str, raw: str) -> tuple[dict | None, str]:
+    def problem_with(self, npc_id: str, raw: str, player_text: str = "") -> tuple[dict | None, str]:
         """Parses the model's answer and looks for anything that must not reach the player. Returns (reply, problem)."""
         try:
             reply = json.loads(re.sub(r"^```(?:json)?|```$", "", raw.strip()).strip())
@@ -172,14 +208,19 @@ class Brain:
             n = name.lower().strip()
             if n not in KNOWN_NAMES and n.rstrip("s") not in KNOWN_NAMES and n.removeprefix("the ") not in KNOWN_NAMES:
                 return reply, f"[{name}] does not exist in this game: only use names from FACTS"
-        # gold amounts that are true: prices, rewards, what the player has, and what they will have after this action
-        allowed = KNOWN_GOLD | {self.game.gold}
+        # gold amounts that are true: prices, rewards and their sums, what the player has, what they are short of, and
+        # what they will have after this action; with no action, also the player's own number said back to them
+        # ("ten gold for my Wolf Charm? No discounts, friend!")
+        g = self.game
+        allowed = KNOWN_GOLD | {g.gold} | {p - g.gold for p in PRICES if p > g.gold}
         if reply["action"] == "sell" and (WORLD["items"].get(target) or {}).get("price"):
-            allowed.add(self.game.gold - WORLD["items"][target]["price"])
+            allowed.add(g.gold - WORLD["items"][target]["price"])
         if reply["action"] == "complete_quest" and target in WORLD["quests"]:
-            allowed.add(self.game.gold + WORLD["quests"][target]["reward_gold"])
-        for n in re.findall(r"(\d+)\s*(?:gold|coins?)\b", low):
-            if int(n) not in allowed:
+            allowed.add(g.gold + WORLD["quests"][target]["reward_gold"])
+        if reply["action"] == "none":
+            allowed |= set(amounts(player_text))
+        for n in amounts(say):
+            if n not in allowed:
                 return reply, f"'{n} gold' is not a real price or reward in this game"
         if reply["action"] not in ACTIONS or ACTIONS[reply["action"]]["who"] not in (None, npc_id):
             return reply, f"'{reply['action']}' is not one of your actions"
@@ -194,10 +235,12 @@ class Brain:
         status = "I have nothing more to ask of you, child."
         for q, quest in WORLD["quests"].items():
             if g.quests[q] == "active":
-                status = f"Have you found the [{_name('items', quest['wants_item'])}] yet?"
+                wanted = _name("items", quest["wants_item"])
+                status = (f"Is that the [{wanted}] you carry? Show it to me once more, child, my old eyes are slow today."
+                          if quest["wants_item"] in g.inventory else f"Have you found the [{wanted}] yet?")
                 break
-            if g.quests[q] == "not_started" and g.check("mira", "give_quest", q)[0]:
-                status = f"There is a task, if you would help: [{quest['name']}]."
+            if g.quests[q] == "not_started" and (not quest["requires_quest"] or g.quests[quest["requires_quest"]] == "done"):
+                status = f"There is a task, if you would help: [{quest['name']}]. Will you?"
                 break
         lines = npc["fallback"]
         return lines[len(self.history[npc_id]) % len(lines)].format(stock=stock, quest_status=status)
@@ -253,18 +296,29 @@ class Brain:
             except LLMError as e:
                 out["problems"].append(f"model unavailable: {e}")
                 out.update(source="fallback", say=self.fallback(npc_id))
+                self._note_offers(npc_id, out["say"])  # "There is a task, if you would help…" is an offer too
                 return
             out["model"] = got.get("model")
             out["model_ms"] += got.get("latency_ms", 0)
             out["tokens_in"] += got.get("tokens_in", 0)
             out["tokens_out"] += got.get("tokens_out", 0)
-            reply, problem = self.problem_with(npc_id, got["text"])
+            reply, problem = self.problem_with(npc_id, got["text"], text)
             if not problem:
                 ok, reason = g.check(npc_id, reply["action"], reply["target"])
+                if not ok and reason == NOT_OFFERED:
+                    # she offers the task in the same breath as giving it: keep her words, start nothing. The player's
+                    # "yes" starts it next time (see Game.offer).
+                    g.offer(reply["target"])
+                    out["problems"].append("held back: the task was offered, not given (the player has not said yes yet)")
+                    reply.update(action="none", target=None)
+                    ok = True
                 if ok:
                     out.update(say=reply["say"], action=reply["action"], target=reply["target"], action_ok=True)
                     out["events"] = g.apply(npc_id, reply["action"], reply["target"])
-                    self._remember_action(npc_id, reply["action"], reply["target"])
+                    if out["events"]:  # something new happened (a danger already on the map is not news)
+                        self._remember_action(npc_id, reply["action"], reply["target"])
+                    if reply["action"] == "none":
+                        self._note_offers(npc_id, reply["say"])
                     return
                 refused = reason
                 problem = f"the game refused '{reply['action']}': {reason}"
@@ -273,6 +327,19 @@ class Brain:
                     "use \"none\" and tell the player, in character, why it cannot be done.")
         out.update(source="fallback", action_ok=False if refused else None,
                    say=self.fallback(npc_id, "refuse", refused) if refused else self.fallback(npc_id))
+        self._note_offers(npc_id, out["say"])
+
+    def _note_offers(self, npc_id: str, say: str) -> None:
+        """A task this character could hand out now, named in what they just said (the task or what it asks for):
+        that is the offer, so the player's next "yes" can start it."""
+        low = say.lower()
+        for q, quest in WORLD["quests"].items():
+            if quest["giver"] != npc_id or q in self.game.offered or self.game.quests[q] != "not_started":
+                continue
+            if quest["requires_quest"] and self.game.quests[quest["requires_quest"]] != "done":
+                continue
+            if quest["name"].lower().removeprefix("the ") in low or WORLD["items"][quest["wants_item"]]["name"].lower() in low:
+                self.game.offer(q)
 
     def _remember_action(self, npc_id: str, action: str, target: str | None) -> None:
         notes = {"sell": lambda: f"The player bought a {_name('items', target)} from you.",

@@ -1,5 +1,6 @@
 """The characters. Each sheet says who they are, how they talk, what they know and do not know, their starting mood,
-and what they say when the AI model cannot answer (fallback) or when the game refuses what they tried to do.
+what they say when the AI model cannot answer (fallback) or when the game refuses what they tried to do, and a few
+ideas for the player ("try"), shown as buttons under the dialogue box. The player can always type anything instead.
 
 `knows` decides which game facts are put in front of the character (brain/dialogue.py `facts_for`):
   items:  "stock" = the items they sell, with prices; "names" = item names only; None = nothing
@@ -22,6 +23,7 @@ NPCS = {
                      "Hm? Lost my thread there. Anyway, I sell: {stock}."],
         "refuse": "Can't do that, friend: {reason}.",
         "deflect": "Mind your tongue at my stall, friend, or shop elsewhere.",
+        "try": ["What do you sell?", "How much is a Torch?", "I'd like a Rope, please."],
     },
     "roderic": {
         "name": "Captain Roderic", "role": "the guard captain", "place": "north_gate", "job": "guards the gate and knows every danger outside",
@@ -36,6 +38,7 @@ NPCS = {
                      "I have a gate to watch. The woods are risky, the mine is deadly. That is all you need to know."],
         "refuse": "No. {reason}.",
         "deflect": "Watch your mouth, traveller. One more word like that and you wait outside the walls.",
+        "try": ["Is the Whispering Woods dangerous?", "What happened at the Old Mine?", "May I have the Gate Pass?"],
     },
     "mira": {
         "name": "Elder Mira", "role": "the village elder", "place": "village_square", "job": "gives out the village's tasks",
@@ -50,6 +53,7 @@ NPCS = {
                      "Hm… where was I? {quest_status}"],
         "refuse": "Not yet, child: {reason}.",
         "deflect": "Such words do not belong at this well, child.",
+        "try": ["Can I help the village?", "Yes, I will help.", "Tell me about Maple Hollow."],
     },
     # A guest from our Discord server: M.IKU, with her own eight mood sliders (the baseline of her real emotion engine).
     "miku": {
@@ -64,5 +68,6 @@ NPCS = {
         "fallback": ["eh? i lost my words for a sec… la la la~", "hiii! sorry, i was humming. what did you say?"],
         "refuse": "ehh i can't do that… {reason}",
         "deflect": "heyyy, that's not nice. be sweet or i'll sing somewhere else!",
+        "try": ["Sing me something!", "Heard any rumours?", "Who should I talk to?"],
     },
 }

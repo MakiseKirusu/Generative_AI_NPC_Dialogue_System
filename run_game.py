@@ -7,8 +7,8 @@ terminal version (play.py); only the screen is different.
 
 This file is a small web server on your own computer (nobody else can reach it). The page in web/ draws the
 village and calls these addresses:
-    GET  /api/world    the map's names (places, items, quests, characters); never changes
-    GET  /api/state    the game right now (gold, bag, quests, moods, recent chat)
+    GET  /api/world    the map's names (places, items with what they are, quests, characters and ideas to say); never changes
+    GET  /api/state    the game right now (gold, bag, quests, the next step, signs over heads, moods, recent chat)
     POST /api/talk     {"npc": "bram", "text": "hello"}   → the character's answer + the new state
     POST /api/go       {"place": "market"}                 → move to a place (the game may refuse)
     POST /api/search   {}                                  → search where you stand
@@ -39,18 +39,21 @@ def new_brain() -> Brain:
 
 
 BRAIN = new_brain()
+PEOPLE = {k: {"name": n["name"], "place": n["place"]} for k, n in NPCS.items()}
 
 
 def world() -> dict:
     return {"village": WORLD["village"],
             "places": {k: {"name": p["name"], "danger": p["danger"]} for k, p in WORLD["places"].items()},
-            "items": {k: i["name"] for k, i in WORLD["items"].items()},
-            "quests": {k: {"name": q["name"], "summary": q["summary"]} for k, q in WORLD["quests"].items()},
-            "npcs": {k: {"name": n["name"], "role": n["role"], "place": n["place"]} for k, n in NPCS.items()}}
+            "items": {k: {"name": i["name"], "about": i["about"], "price": i["price"]} for k, i in WORLD["items"].items()},
+            "quests": {k: {"name": q["name"], "summary": q["summary"], "reward": q["reward_gold"]} for k, q in WORLD["quests"].items()},
+            "npcs": {k: {"name": n["name"], "role": n["role"], "place": n["place"], "try": n.get("try", [])} for k, n in NPCS.items()}}
 
 
 def state() -> dict:
+    """Everything here comes from the game's facts; the screen only draws it."""
     return {"game": BRAIN.game.to_dict(), "has_key": bool(LLM.keys),
+            "next": BRAIN.game.next_step(PEOPLE), "marks": BRAIN.game.marks(),
             "moods": {n: BRAIN.emotions[n].sliders() for n in NPCS},
             "history": {n: BRAIN.history[n][-3:] for n in NPCS}}
 
@@ -100,6 +103,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/state":
             with LOCK:
                 self.json(state())
+        elif path == "/favicon.ico":
+            self.send(204, b"", "image/x-icon")  # no icon: say so without an error in the browser's console
         else:
             self.send(404, b"not found", "text/plain")
 
